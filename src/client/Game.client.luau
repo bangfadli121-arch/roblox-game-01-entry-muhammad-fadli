@@ -56,7 +56,8 @@ gameLayer.BackgroundTransparency = 1
 local hud = makeFrame(arena, "HUD", UDim2.fromScale(1, 1), UDim2.fromOffset(0, 0), COLORS.background)
 hud.BackgroundTransparency = 1
 
-local scoreLabel = makeLabel(hud, "Score", "SCORE  0", UDim2.fromOffset(260, 40), UDim2.new(0.5, -130, 0, 10), 27, COLORS.white)
+local scoreLabel = makeLabel(hud, "Score", "SCORE  0", UDim2.fromOffset(230, 42), UDim2.new(0.5, -210, 0, 9), 25, COLORS.white)
+local comboLabel = makeLabel(hud, "Combo", "COMBO  x1", UDim2.fromOffset(165, 42), UDim2.new(0.5, 25, 0, 9), 25, COLORS.gold)
 local timerLabel = makeLabel(hud, "Timer", "00:00", UDim2.fromOffset(150, 25), UDim2.new(0.5, -75, 0, 49), 17, COLORS.muted)
 local livesLabel = makeLabel(hud, "Lives", "♥  ♥  ♥", UDim2.fromOffset(145, 38), UDim2.new(1, -158, 0, 16), 23, COLORS.red)
 livesLabel.TextXAlignment = Enum.TextXAlignment.Right
@@ -80,8 +81,19 @@ local countdown = makeLabel(arena, "Countdown", "", UDim2.fromScale(1, 1), UDim2
 countdown.Visible = false
 countdown.BackgroundTransparency = 1
 
+local pauseOverlay = makeFrame(arena, "PauseOverlay", UDim2.fromScale(1, 1), UDim2.fromOffset(0, 0), COLORS.background)
+pauseOverlay.BackgroundTransparency = 0.22
+pauseOverlay.Visible = false
+pauseOverlay.ZIndex = 10
+local pauseTitle = makeLabel(pauseOverlay, "PauseTitle", "PAUSED", UDim2.new(1, -40, 0, 80), UDim2.new(0, 20, 0.5, -55), 54, COLORS.gold)
+pauseTitle.ZIndex = 11
+local pauseHint = makeLabel(pauseOverlay, "PauseHint", "PRESS P TO RESUME", UDim2.new(1, -40, 0, 30), UDim2.new(0, 20, 0.5, 25), 17, COLORS.white)
+pauseHint.ZIndex = 11
+
 local state = "menu"
 local bestScore, score, lives, elapsed = 0, 0, 3, 0
+local combo, lastCoinAt, scoreFlashUntil = 1, nil, 0
+local pausedAt
 local playerX, playerY = WIDTH / 2, HEIGHT - 100
 local invulnerableUntil, nextCoinAt, nextHazardAt = 0, 1.2, 1.5
 local hazards, coins = {}, {}
@@ -94,6 +106,7 @@ local function setState(nextState)
 	hud.Visible = nextState == "playing" or nextState == "countdown"
 	gameLayer.Visible = nextState == "playing" or nextState == "countdown"
 	countdown.Visible = nextState == "countdown"
+	pauseOverlay.Visible = nextState == "paused"
 end
 
 local function clearObjects()
@@ -153,6 +166,8 @@ end
 local function startRun()
 	clearObjects()
 	score, lives, elapsed = 0, 3, 0
+	combo, lastCoinAt, scoreFlashUntil = 1, nil, 0
+	pausedAt = nil
 	playerX, playerY = WIDTH / 2, HEIGHT - 100
 	invulnerableUntil, nextCoinAt, nextHazardAt = 0, 1.2, 1.5
 	makeOrb()
@@ -169,8 +184,25 @@ local function startRun()
 	end)
 end
 
+local function togglePause()
+	if state == "playing" then
+		pausedAt = os.clock()
+		setState("paused")
+	elseif state == "paused" then
+		local pauseDuration = os.clock() - pausedAt
+		invulnerableUntil += pauseDuration
+		scoreFlashUntil += pauseDuration
+		pausedAt = nil
+		setState("playing")
+	end
+end
+
 actionButton.Activated:Connect(startRun)
 UserInputService.InputBegan:Connect(function(input)
+	if input.KeyCode == Enum.KeyCode.P then
+		togglePause()
+		return
+	end
 	if input.KeyCode == Enum.KeyCode.R and state == "over" then startRun() end
 end)
 
@@ -197,11 +229,19 @@ local function overlaps(item, radius)
 	return dx * dx + dy * dy <= reach * reach
 end
 
-local function updateCoins(dt)
+local function updateCoins()
 	for i = #coins, 1, -1 do
 		local item = coins[i]
 		if overlaps(item, 15) then
-			score += 100
+			local previousCombo = combo
+			if lastCoinAt and elapsed - lastCoinAt <= 3 then
+				combo = math.min(combo + 1, 5)
+			else
+				combo = 1
+			end
+			lastCoinAt = elapsed
+			if combo > previousCombo then scoreFlashUntil = os.clock() + 0.35 end
+			score += 100 * combo
 			item.view:Destroy()
 			table.remove(coins, i)
 		elseif item.y < -30 then
@@ -220,6 +260,7 @@ local function updateHazards(dt, now)
 		placeObject(item)
 		if overlaps(item, 12) and now >= invulnerableUntil then
 			lives -= 1
+			combo, lastCoinAt = 1, nil
 			invulnerableUntil = now + 1.5
 			if lives <= 0 then
 				finishRun()
@@ -233,8 +274,14 @@ local function updateHazards(dt, now)
 	return true
 end
 
-local function updateHud()
+local function updateHud(now)
+	if lastCoinAt and elapsed - lastCoinAt > 3 then
+		combo, lastCoinAt = 1, nil
+	end
 	scoreLabel.Text = "SCORE  " .. math.floor(score)
+	scoreLabel.TextColor3 = now < scoreFlashUntil and COLORS.gold or COLORS.white
+	scoreLabel.TextSize = now < scoreFlashUntil and 31 or 25
+	comboLabel.Text = "COMBO  x" .. combo
 	timerLabel.Text = string.format("%02d:%02d", math.floor(elapsed / 60), math.floor(elapsed % 60))
 	livesLabel.Text = string.rep("♥  ", lives)
 end
@@ -255,9 +302,9 @@ RunService.RenderStepped:Connect(function(dt)
 		nextHazardAt = elapsed + math.max(0.38, 1.55 - difficulty * 0.085)
 	end
 	updatePlayer(dt, now)
-	updateCoins(dt)
+	updateCoins()
 	if not updateHazards(dt, now) then return end
-	updateHud()
+	updateHud(now)
 end)
 
 local remote = ReplicatedStorage:WaitForChild("SubmitScore", 10)
