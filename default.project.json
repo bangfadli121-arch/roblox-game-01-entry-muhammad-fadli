@@ -1,0 +1,46 @@
+{
+  "name": "ember-dash",
+  "tree": {
+    "$className": "DataModel",
+    "Players": {
+      "$properties": {
+        "CharacterAutoLoads": false
+      }
+    },
+    "ServerScriptService": {
+      "Server": {
+        "$path": "src/server"
+      }
+    },
+    "StarterPlayer": {
+      "StarterPlayerScripts": {
+        "Client": {
+          "$path": "src/client"
+        }
+      }
+    },
+    "Workspace": {
+      "$properties": {
+        "FilteringEnabled": true
+      },
+      "Baseplate": {
+        "$className": "Part",
+        "$properties": {
+          "Anchored": true,
+          "Size": [512, 1, 512],
+          "Position": [0, -20, 0],
+          "Color": [0.15, 0.15, 0.18],
+          "Material": "Slate"
+        }
+      }
+    },
+    "Lighting": {
+      "$properties": {
+        "Brightness": 2,
+        "GlobalShadows": true,
+        "Technology": "Voxel"
+      }
+    },
+    "SoundService": {}
+  }
+}
